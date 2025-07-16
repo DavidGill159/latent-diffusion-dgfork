@@ -1,0 +1,76 @@
+model:
+  base_learning_rate: 4.5e-6
+# The learning rate is sometimes scaled with the effective batch size (this depends on the optimizer and training strategy).
+    #Rule of Thumb: If your batch size decreases significantly, you might need to lower the learning rate.
+    #Test first! If training is stable, keep it. If it's unstable, try lowering it (e.g., for batchsize 8 = 2.5e-06)
+      # - Adjust batch_size and run a short test (1-2 epochs):
+      # - Look at loss values, gradients, and learning stability.
+      # - If you see weird jumps in loss or NaNs, then adjust base_learning_rate or accumulate_grad_batches
+
+  target: ldm.models.autoencoder.AutoencoderKL
+  params:
+    monitor: "val/rec_loss"
+    embed_dim: 4 # DG - changed from 16 to 4 for grayscale support ->
+                    # * Grayscale images have just 1 channel - a smaller embed_dim prevents over-parameterisation, ensuring the model doesn't use excessive latent space to encode redundant grayscale info.
+                    # * Many LDMs use 4 for 245x256 - 16 is more common in high-resolution/multi-channel images
+                    # * Lowering embed also reduces memory consumption because the model needs fewer latent variables per image.
+    lossconfig:
+      #target: ldm.modules.losses.LPIPSWithDiscriminator # > TOO SLOW FOR THIS PC!
+      target: ldm.modules.losses.vqperceptual.DummyLoss
+
+      params:
+        #disc_start: 50001 # > only used for LPIPSWithDiscriminator LOSS
+        kl_weight: 0.000001
+        #disc_weight: 0.5 # > only used for LPIPSWithDiscriminator LOSS
+        #disc_in_channels: 1 # forces single channel for grayscale compatiblility - # > only used for LPIPSWithDiscriminator LOSS
+
+    ddconfig:
+      double_z: True
+      z_channels: 16
+      resolution: 512
+      in_channels: 1 # DG - modified from 3 to 1 for grayscale compatiblity
+      out_ch: 1 # DG - modified from 3 to 1 for grayscale compatiblity
+      ch: 128
+      ch_mult: [ 1,1,2,2,4]  # num_down = len(ch_mult)-1
+      num_res_blocks: 2
+      attn_resolutions: [16]
+      dropout: 0.0
+
+
+data: # DG - modified for grayscale 
+  target: main.DataModuleFromConfig
+  params:
+    batch_size: 2  # Adjust based on your GPU memory - reduced from 32 to 8 due to GPU ceiling being hit with 256x256 images
+    num_workers: 4   # Adjust based on your CPU
+    train:
+      target: ldm.data.DG_grayscale_dataset.GrayscaleImageDataset
+      params:
+        root: C:\code_DG\Image_dataset\All_natural_images\all_textures
+        image_size: 512
+    validation:
+      target: ldm.data.DG_grayscale_dataset.GrayscaleImageDataset
+      params:
+        root: C:\code_DG\Image_dataset\All_natural_images\all_textures
+        image_size: 512
+
+
+
+lightning:
+  callbacks:
+    image_logger:
+      target: main.ImageLogger
+      params:
+        batch_frequency: 1000
+        max_images: 8
+        increase_log_steps: True
+
+  trainer:
+    benchmark: True
+    accumulate_grad_batches: 2 # controls gradient accumulation - often used to simulate a larger effective batch size when reducing batch size
+#                                   e.g. batch size 32, accumulate_gb 2 = efective batch size is 64 
+    max-epochs: 100 
+
+##############
+
+
+

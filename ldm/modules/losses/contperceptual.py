@@ -6,9 +6,9 @@ from taming.modules.losses.vqperceptual import *  # TODO: taming dependency yes/
 
 class LPIPSWithDiscriminator(nn.Module):
     def __init__(self, disc_start, logvar_init=0.0, kl_weight=1.0, pixelloss_weight=1.0,
-                 disc_num_layers=3, disc_in_channels=3, disc_factor=1.0, disc_weight=1.0,
+                 disc_num_layers=3, disc_in_channels=1, disc_factor=1.0, disc_weight=1.0,
                  perceptual_weight=1.0, use_actnorm=False, disc_conditional=False,
-                 disc_loss="hinge"):
+                 disc_loss="hinge"): # DG TROUBLESHOOT - disc_in_channels set from 3 to 1 to accomodate single channel grayscale images
 
         super().__init__()
         assert disc_loss in ["hinge", "vanilla"]
@@ -28,6 +28,8 @@ class LPIPSWithDiscriminator(nn.Module):
         self.disc_factor = disc_factor
         self.discriminator_weight = disc_weight
         self.disc_conditional = disc_conditional
+        print(f"🚨 LPIPSWithDiscriminator initialized with disc_in_channels={disc_in_channels}") # DG - DEBUGGING ^ see above
+
 
     def calculate_adaptive_weight(self, nll_loss, g_loss, last_layer=None):
         if last_layer is not None:

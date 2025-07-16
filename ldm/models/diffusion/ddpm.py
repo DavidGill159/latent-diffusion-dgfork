@@ -113,7 +113,6 @@ class DDPM(pl.LightningModule):
         if self.learn_logvar:
             self.logvar = nn.Parameter(self.logvar, requires_grad=True)
 
-
     def register_schedule(self, given_betas=None, beta_schedule="linear", timesteps=1000,
                           linear_start=1e-4, linear_end=2e-2, cosine_s=8e-3):
         if exists(given_betas):
@@ -328,9 +327,17 @@ class DDPM(pl.LightningModule):
 
     def get_input(self, batch, k):
         x = batch[k]
+
         if len(x.shape) == 3:
             x = x[..., None]
-        x = rearrange(x, 'b h w c -> b c h w')
+
+############################################################################################ 
+# DG TROUBLESHOOT - 14/7/2025 
+# >>>
+        #x = rearrange(x, 'b h w c -> b c h w')
+# <<< 
+############################################################################################ 
+
         x = x.to(memory_format=torch.contiguous_format).float()
         return x
 
@@ -653,12 +660,16 @@ class LatentDiffusion(DDPM):
     @torch.no_grad()
     def get_input(self, batch, k, return_first_stage_outputs=False, force_c_encode=False,
                   cond_key=None, return_original_cond=False, bs=None):
+
         x = super().get_input(batch, k)
         if bs is not None:
             x = x[:bs]
         x = x.to(self.device)
+
         encoder_posterior = self.encode_first_stage(x)
         z = self.get_first_stage_encoding(encoder_posterior).detach()
+
+
 
         if self.model.conditioning_key is not None:
             if cond_key is None:
@@ -1027,7 +1038,17 @@ class LatentDiffusion(DDPM):
         loss_simple = self.get_loss(model_output, target, mean=False).mean([1, 2, 3])
         loss_dict.update({f'{prefix}/loss_simple': loss_simple.mean()})
 
-        logvar_t = self.logvar[t].to(self.device)
+############################################################################################ 
+
+        # logvar_t = self.logvar[t].to(self.device) ## - DG replaced ->
+
+# DG TROUBLESHOOT - 14/7/25
+# >>>
+#       - above line replaced with following:
+        logvar_t = self.logvar.to(self.device)[t]
+# <<< 
+############################################################################################ 
+
         loss = loss_simple / torch.exp(logvar_t) + logvar_t
         # loss = loss_simple / torch.exp(self.logvar) + self.logvar
         if self.learn_logvar:
@@ -1249,7 +1270,7 @@ class LatentDiffusion(DDPM):
 
     @torch.no_grad()
     def log_images(self, batch, N=8, n_row=4, sample=True, ddim_steps=200, ddim_eta=1., return_keys=None,
-                   quantize_denoised=True, inpaint=True, plot_denoise_rows=False, plot_progressive_rows=True,
+                   quantize_denoised=True, inpaint=False, plot_denoise_rows=False, plot_progressive_rows=True, ######## DG TROUBLESHOOT - 14/7/25 - inpaint set from True to False
                    plot_diffusion_rows=True, **kwargs):
 
         use_ddim = ddim_steps is not None

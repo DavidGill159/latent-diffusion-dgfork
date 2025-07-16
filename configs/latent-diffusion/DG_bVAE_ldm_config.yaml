@@ -1,0 +1,84 @@
+data:
+  params:
+    batch_size: 8
+    num_workers: 4
+    train:
+      params:
+        data_root: C:/code_DG/Image_dataset/All_natural_images/all_textures
+        size: 512 # Input resolution: 512×512 grayscale images
+      target: ldm.data.DG_custom.CustomTrain
+    validation:
+      params:
+        data_root: C:/code_DG/Image_dataset/All_natural_images/all_textures
+        size: 512
+      target: ldm.data.DG_custom.CustomValidation
+    wrap: false
+  target: main.DataModuleFromConfig
+lightning:
+  callbacks:
+    image_logger:
+      params:
+        batch_frequency: 5000
+        increase_log_steps: false
+        max_images: 8
+      target: main.ImageLogger
+  trainer:
+    benchmark: true
+model:
+  base_learning_rate: 2.0e-06
+  params:
+    channels: 1
+    cond_stage_config: __is_unconditional__
+    first_stage_config:
+      params:
+        ckpt_path: C:/code_DG/latent-texture-image-space/Convolutional_bVAE_Pipeline/training_logs/beta_4/wrapped_for_LDM/beta4_vae_epoch199.ckpt # Autoencoder: KL-based, checkpoint path set to...
+
+        ddconfig: # Architecture structure of our b-VAE...
+          double_z: true           # You output μ and log σ²
+          z_channels: 1            # 1 latent channel
+          resolution: 512          # Input resolution
+          in_channels: 1           # Grayscale input
+          out_ch: 1                # Grayscale output
+          ch: 32                   # Initial channel size (your encoder starts with 32 filters)
+          ch_mult:
+            - 1
+            - 2
+            - 4
+            - 8 # Growth pattern of conv channels (32 → 256)
+          num_res_blocks: 1        # You do NOT use residual blocks
+          attn_resolutions: []     # No attention layers
+          dropout: 0.0
+          kernel_size: 4  # ✅ Match your pretrained VAE
+
+        embed_dim: 1
+        lossconfig:
+          target: torch.nn.Identity
+        #monitor: val/rec_loss
+      target: ldm.models.autoencoder.AutoencoderKL
+    first_stage_key: image
+    image_size: 32
+    linear_end: 0.0195
+    linear_start: 0.0015
+    log_every_t: 200
+    monitor: val/loss_simple_ema
+    num_timesteps_cond: 1
+    timesteps: 1000
+    unet_config:
+      params:
+        attention_resolutions:
+        - 4
+        - 2
+        - 1
+        channel_mult:
+        - 1
+        - 2
+        - 4
+        - 4
+        image_size: 32
+        in_channels: 1
+        model_channels: 128
+        num_head_channels: 32
+        num_res_blocks: 2
+        out_channels: 1
+      target: ldm.modules.diffusionmodules.openaimodel.UNetModel
+  target: ldm.models.diffusion.ddpm.LatentDiffusion

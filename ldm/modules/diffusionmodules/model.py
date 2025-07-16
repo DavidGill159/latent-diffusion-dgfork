@@ -237,12 +237,27 @@ class Model(nn.Module):
                                 self.temb_ch),
             ])
 
+
+############################################################################################ 
+# DG TROUBLESHOOT - 14/7/25
+# >>>
+
         # downsampling
+
+        # self.conv_in = torch.nn.Conv2d(in_channels,
+        #                                self.ch,
+        #                                kernel_size=3,
+        #                                stride=1,
+        #                                padding=1)
+        
+#   - above code commented out and replaced with below to solve conv mismatch with my pretrained bVAE
         self.conv_in = torch.nn.Conv2d(in_channels,
-                                       self.ch,
-                                       kernel_size=3,
-                                       stride=1,
-                                       padding=1)
+                                self.ch,
+                                kernel_size=4,
+                                stride=1,
+                                padding=0)
+# <<<
+############################################################################################
 
         curr_res = resolution
         in_ch_mult = (1,)+tuple(ch_mult)

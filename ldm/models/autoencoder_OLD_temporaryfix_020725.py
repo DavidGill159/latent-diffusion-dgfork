@@ -321,26 +321,14 @@ class AutoencoderKL(pl.LightningModule):
         self.load_state_dict(sd, strict=False)
         print(f"Restored from {path}")
 
+#    def encode(self, x):
+#        h = self.encoder(x)
+#        moments = self.quant_conv(h)
+#        posterior = DiagonalGaussianDistribution(moments)
+#        return posterior
+# DG TROUBLESHOOT ->>>>>>>>>    
     def encode(self, x):
-
-############################################################################################ 
-        # DG TROUBLESHOOT 2/7/25 - optional
-        # >>>
-        # assert x.ndim == 4 and x.shape[1] == 1, f"Expected [B,1,H,W], got {x.shape}"  
-        # <<<  
-
-        # DG TROUBLESHOOT - 11/7/2025
-        # >>>
-        #print(f"🚧 Autoencoder.encode: input x shape = {x.shape}")
-        # <<<
-
-        # DG TROUBLESHOOT - 11/7/2025
-        # >>>
-        #print(f"🧠 AutoencoderKL.encode() input shape: {x.shape}")
-        #print(f"🧠 AutoencoderKL.encoder: {self.encoder}")
-        # <<<
-############################################################################################ 
-
+        print(f"🔥 Input to encoder has shape: {x.shape}")  # Debugging
         h = self.encoder(x)
         moments = self.quant_conv(h)
         posterior = DiagonalGaussianDistribution(moments)
@@ -353,16 +341,7 @@ class AutoencoderKL(pl.LightningModule):
         return dec
 
     def forward(self, input, sample_posterior=True):
-
-############################################################################################ 
-# DG TROUBLESHOOT 2/7/25
-# >>>
-        assert input.ndim == 4, f"Expected 4D input, got {input.ndim}D"
-        assert input.shape[1] == 1, f"Expected channel dim C=1, got {input.shape[1]}"
-        assert input.shape[2] == input.shape[3], f"Expected square input, got {input.shape[2]}×{input.shape[3]}"
-# <<<
-############################################################################################ 
-
+        
         posterior = self.encode(input)
         if sample_posterior:
             z = posterior.sample()
@@ -374,29 +353,57 @@ class AutoencoderKL(pl.LightningModule):
     def get_input(self, batch, k):
         x = batch[k]
         if len(x.shape) == 3:
-            x = x[..., None] # Add channel dim: [H, W] → [H, W, 1]
-
-############################################################################################ 
-# DG TROUBLESHOOT 2/7/25
-# >>>
-            x = x.permute(2, 0, 1)  # [H, W, 1] → [1, H, W]
-
-        x = x.to(memory_format=torch.contiguous_format).float()
-        #x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
-        
+            x = x[..., None]
+        x = x.permute(0, 3, 1, 2).to(memory_format=torch.contiguous_format).float()
         return x
-# <<<
-############################################################################################
+
+    # def training_step(self, batch, batch_idx, optimizer_idx):
+    #     inputs = self.get_input(batch, self.image_key)
+    #     reconstructions, posterior = self(inputs)
+
+    #     if optimizer_idx == 0:
+    #         # train encoder+decoder+logvar
+    #         aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+    #                                         last_layer=self.get_last_layer(), split="train")
+    #         self.log("aeloss", aeloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+    #         self.log_dict(log_dict_ae, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+    #         return aeloss
+
+    #     if optimizer_idx == 1:
+    #         # train the discriminator
+    #         discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, optimizer_idx, self.global_step,
+    #                                             last_layer=self.get_last_layer(), split="train")
+
+    #         self.log("discloss", discloss, prog_bar=True, logger=True, on_step=True, on_epoch=True)
+    #         self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
+    #         return discloss
+
+    # def validation_step(self, batch, batch_idx):
+    #     inputs = self.get_input(batch, self.image_key)
+    #     reconstructions, posterior = self(inputs)
+    #     aeloss, log_dict_ae = self.loss(inputs, reconstructions, posterior, 0, self.global_step,
+    #                                     last_layer=self.get_last_layer(), split="val")
+
+    #     discloss, log_dict_disc = self.loss(inputs, reconstructions, posterior, 1, self.global_step,
+    #                                         last_layer=self.get_last_layer(), split="val")
+
+    #     self.log("val/rec_loss", log_dict_ae["val/rec_loss"])
+    #     self.log_dict(log_dict_ae)
+    #     self.log_dict(log_dict_disc)
+    #     return self.log_dict
+
+################# DG Debugging -> data shape reformat issue 07032025 ###################
 
     def training_step(self, batch, batch_idx, optimizer_idx):
         inputs = self.get_input(batch, self.image_key)
 
-############################################################################################
-# DG TROUBLESHOOT 2/7/25
-# >>>
-        assert inputs.ndim == 4 and inputs.shape[1] == 1, f"Expected [B,1,H,W], got {inputs.shape}"
-# <<<
-############################################################################################
+        print(f"🔥 Input shape before fixing: {inputs.shape}")
+
+        if inputs.shape[1] == 256:
+            print("⚠️ Shape mismatch detected in training! Fixing dimensions...")
+            inputs = inputs.permute(0, 2, 1, 3)  # [B, H, C, W] -> [B, C, H, W]
+            print(f"✅ After Fix: {inputs.shape}")
+
 
         reconstructions, posterior = self(inputs)
 
@@ -417,15 +424,17 @@ class AutoencoderKL(pl.LightningModule):
             self.log_dict(log_dict_disc, prog_bar=False, logger=True, on_step=True, on_epoch=False)
             return discloss
 
+
     def validation_step(self, batch, batch_idx):
         inputs = self.get_input(batch, self.image_key)  # This retrieves the image tensor
 
-############################################################################################
-# DG TROUBLESHOOT 2/7/25
-# >>>
-        assert inputs.ndim == 4 and inputs.shape[1] == 1, f"Expected [B,1,H,W], got {inputs.shape}"
-# <<<
-############################################################################################
+        print(f"🔥 Before model: Batch image shape = {inputs.shape}")  # Debugging print
+
+        # Check if the shape is incorrect (e.g., [32, 256, 1, 256] instead of [32, 1, 256, 256])
+        if inputs.shape[1] != 1:  # Expecting (B, 1, H, W) but second dimension is not 1
+            print("⚠️ Shape mismatch detected! Fixing dimensions...")
+            inputs = inputs.permute(0, 2, 1, 3)  # Correct permutation (B, H, C, W) -> (B, C, H, W)
+            print(f"✅ After Fix: {inputs.shape}")  # Confirming fix
 
         # Forward pass through the autoencoder
         reconstructions, posterior = self(inputs)
@@ -445,6 +454,12 @@ class AutoencoderKL(pl.LightningModule):
         return self.log_dict
 
 
+### OPTIONAL LONG-TERM FIX = 
+#                           1. fix GrayscaleImageDataset to output tensors with shape [B,C,H,W] not [B,H,C,W]
+#                           2. then remove these permute hacks from both training_step() and validation_step()
+
+####################################################################################
+
     def configure_optimizers(self):
         lr = self.learning_rate
         opt_ae = torch.optim.Adam(list(self.encoder.parameters())+
@@ -460,17 +475,35 @@ class AutoencoderKL(pl.LightningModule):
         return self.decoder.conv_out.weight
 
     @torch.no_grad()
+    # def log_images(self, batch, only_inputs=False, **kwargs):
+    #     log = dict()
+    #     x = self.get_input(batch, self.image_key)
+    #     x = x.to(self.device)
+    #     if not only_inputs:
+    #         xrec, posterior = self(x)
+    #         if x.shape[1] > 3:
+    #             # colorize with random projection
+    #             assert xrec.shape[1] > 3
+    #             x = self.to_rgb(x)
+    #             xrec = self.to_rgb(xrec)
+    #         log["samples"] = self.decode(torch.randn_like(posterior.sample()))
+    #         log["reconstructions"] = xrec
+    #     log["inputs"] = x
+    #     return log
 
     def log_images(self, batch, only_inputs=False, **kwargs):
         log = dict()
         x = self.get_input(batch, self.image_key)
 
-############################################################################################
-# DG TROUBLESHOOT 2/7/25
-# >>>
-        assert x.ndim == 4 and x.shape[1] == 1, f"Expected [B,1,H,W], got {x.shape}"
-# <<<
-############################################################################################
+        # DG FIX (11.03.2025) - applying same permutation logic as above ^
+        print(f"🔥 [log_images] Batch input shape: {x.shape}")
+
+        if x.shape[1] != 1:
+            print("⚠️ [log_images] Shape mismatch detected! Fixing dimensions...")
+            x = x.permute(0, 2, 1, 3)
+            print(f"✅ [log_images] After fix: {x.shape}")
+        ##################################################################
+
         x = x.to(self.device)
         if not only_inputs:
             xrec, posterior = self(x)
