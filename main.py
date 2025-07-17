@@ -400,7 +400,8 @@ class CUDACallback(Callback):
         torch.cuda.synchronize(trainer.root_gpu)
         self.start_time = time.time()
 
-    def on_train_epoch_end(self, trainer, pl_module, outputs):
+    #def on_train_epoch_end(self, trainer, pl_module, outputs):
+    def on_train_epoch_end(self, trainer, pl_module): # DG Troubleshoot - outputs argument removed due to issue with lightning-version - see here: https://github.com/williamFalcon/pytorch-lightning-vae/issues/7 
         torch.cuda.synchronize(trainer.root_gpu)
         max_memory = torch.cuda.max_memory_allocated(trainer.root_gpu) / 2 ** 20
         epoch_time = time.time() - self.start_time
@@ -517,17 +518,46 @@ if __name__ == "__main__":
         lightning_config = config.pop("lightning", OmegaConf.create())
         # merge trainer cli with config
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
-        # default to ddp
-        trainer_config["accelerator"] = "ddp"
-        for k in nondefault_trainer_args(opt):
-            trainer_config[k] = getattr(opt, k)
-        if not "gpus" in trainer_config:
+        # # default to ddp
+        # trainer_config["accelerator"] = "ddp"
+        # for k in nondefault_trainer_args(opt):
+        #     trainer_config[k] = getattr(opt, k)
+        # if not "gpus" in trainer_config:
+        #     del trainer_config["accelerator"]
+        #     cpu = True
+        # else:
+        #     gpuinfo = trainer_config["gpus"]
+        #     print(f"Running on GPUs {gpuinfo}")
+        #     cpu = False
+
+        ######################################################################################
+        ################# DG - TROUBLESHOOT - ISSUE USING LOCAL SINGLE GPU ###################
+        #       - DDP is for multi-GPU training.
+
+        # ✅ Explicitly use GPU
+        trainer_config["accelerator"] = "gpu"  # or 'cuda' depending on your version
+        trainer_config["devices"] = 1          # You have one GPU (RTX 4080)
+        #trainer_config["strategy"] = "auto"
+
+        # Optional: remove ddp if present
+        if "strategy" in trainer_config and trainer_config["strategy"] == "ddp":
+            del trainer_config["strategy"]
+
+        # Optional: if you want automatic GPU assignment, can add this:
+        # trainer_config["auto_select_gpus"] = True
+
+        # Check if gpus/devices is already there, but we just set devices above
+        if not "devices" in trainer_config:
+            # fallback to cpu
             del trainer_config["accelerator"]
             cpu = True
         else:
-            gpuinfo = trainer_config["gpus"]
+            gpuinfo = trainer_config["devices"]
             print(f"Running on GPUs {gpuinfo}")
             cpu = False
+        ################# DG - TROUBLESHOOT - ISSUE USING LOCAL SINGLE GPU ###################
+        ######################################################################################
+
         trainer_opt = argparse.Namespace(**trainer_config)
         lightning_config.trainer = trainer_config
 
@@ -609,6 +639,7 @@ if __name__ == "__main__":
                     "batch_frequency": 750,
                     "max_images": 4,
                     "clamp": True
+
                 }
             },
             "learning_rate_logger": {
@@ -673,7 +704,10 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            #ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            #ngpu = 1 if isinstance(lightning_config.trainer.gpus, int) else len(lightning_config.trainer.gpus.strip(",").split(',')) # DG Troubleshoot 07032025
+            ngpu = 1 if isinstance(lightning_config.trainer.devices, int) else len(str(lightning_config.trainer.devices).strip(",").split(',')) # Dg Troubleshoot 11032025 - to accomodate GPU utilisation change from ddp to accelerator - suitable for single GPU devices
+
         else:
             ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:
@@ -708,10 +742,18 @@ if __name__ == "__main__":
                 pudb.set_trace()
 
 
-        import signal
+        #import signal
 
-        signal.signal(signal.SIGUSR1, melk)
-        signal.signal(signal.SIGUSR2, divein)
+        #signal.signal(signal.SIGUSR1, melk)
+
+        import signal
+        import sys
+
+        if sys.platform != "win32":  # DG Troubleshoot - Skip SIGUSR1 setup on Windows
+            signal.signal(signal.SIGUSR1, melk)
+            signal.signal(signal.SIGUSR2, divein)
+
+
 
         # run
         if opt.train:
